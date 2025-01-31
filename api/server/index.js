@@ -23,6 +23,8 @@ const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
 const User = require('~/models/User');
 const Balance = require('~/models/Balance')
+const Conversation = require('~/models/schema/convoSchema');
+const Message = require('~/models/schema/messageSchema');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION } = process.env ?? {};
 
@@ -46,41 +48,91 @@ const startServer = async () => {
 
   app.get('/health', (_req, res) => res.status(200).send('OK'));
   app.get('/api/check-balance', async (req, res) => {
-  const { email, password } = req.query;
+    const {email, password} = req.query;
 
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email and password are required' });
-  }
-
-  if (!email.includes('@')) {
-    return res.status(400).json({ error: 'Invalid email address' });
-  }
-
-  if (!process.env.CHECK_BALANCE || isEnabled(process.env.CHECK_BALANCE) === false) {
-    return res.status(403).json({ error: 'CHECK_BALANCE is not enabled' });
-  }
-
-  try {
-    const user = await User.findOne({ email }).lean();
-    if (!user) {
-      return res.status(404).json({ error: 'No user with that email was found' });
+    if (!email || !password) {
+      return res.status(400).json({error: 'Email and password are required'});
     }
 
-    // Validate password (assuming you have a method to compare passwords)
-    const isPasswordValid = await user.comparePassword(password);
-    if (!isPasswordValid) {
-      return res.status(401).json({ error: 'Invalid password' });
+    if (!email.includes('@')) {
+      return res.status(400).json({error: 'Invalid email address'});
     }
 
-    const balance = await Balance.findOne({ user: user._id });
-    const tokenCredits = balance ? balance.tokenCredits : 0;
+    if (!process.env.CHECK_BALANCE || isEnabled(process.env.CHECK_BALANCE) === false) {
+      return res.status(403).json({error: 'CHECK_BALANCE is not enabled'});
+    }
 
-    return res.json({ email: user.email, tokenCredits });
-  } catch (error) {
-    console.error('Error fetching user balance:', error);
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-});
+    try {
+      const user = await User.findOne({email}).lean();
+      if (!user) {
+        return res.status(404).json({error: 'No user with that email was found'});
+      }
+
+      // Validate password (assuming you have a method to compare passwords)
+      const isPasswordValid = await user.comparePassword(password);
+      if (!isPasswordValid) {
+        return res.status(401).json({error: 'Invalid password'});
+      }
+
+      const balance = await Balance.findOne({user: user._id});
+      const tokenCredits = balance ? balance.tokenCredits : 0;
+
+      return res.json({email: user.email, tokenCredits});
+    } catch (error) {
+      console.error('Error fetching user balance:', error);
+      return res.status(500).json({error: 'Internal server error'});
+    }
+  });
+  // New API Route to fetch user conversations and messages
+  app.get('/api/user-conversations', async (req, res) => {
+    const {email, password} = req.query;
+
+    if (!email || !password) {
+      return res.status(400).json({error: 'Email and password are required'});
+    }
+
+    if (!email.includes('@')) {
+      return res.status(400).json({error: 'Invalid email address'});
+    }
+
+    try {
+      const user = await User.findOne({email}).lean();
+      if (!user) {
+        return res.status(404).json({error: 'No user with that email was found'});
+      }
+
+      // Validate password (assuming you have a method to compare passwords)
+      const isPasswordValid = await user.comparePassword(password);
+      if (!isPasswordValid) {
+        return res.status(401).json({error: 'Invalid password'});
+      }
+
+      // Fetch conversations for the user
+      const conversations = await Conversation.find({user: user._id}).lean();
+
+      // Fetch messages for each conversation
+      const conversationsWithMessages = await Promise.all(
+          conversations.map(async (convo) => {
+            const messages = await Message.find({conversationId: convo.conversationId}).lean();
+            return {
+              ...convo,
+              messages: messages.map((msg) => ({
+                messageId: msg.messageId,
+                text: msg.text,
+                tokenCount: msg.tokenCount,
+                createdAt: msg.createdAt,
+              })),
+            };
+          }),
+      );
+
+      return res.json({email: user.email, conversations: conversationsWithMessages});
+    } catch (error) {
+      console.error('Error fetching user conversations:', error);
+      return res.status(500).json({error: 'Internal server error'});
+    }
+  });
+
 
   /* Middleware */
   app.use(noIndex);
