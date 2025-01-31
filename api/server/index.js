@@ -21,6 +21,8 @@ const AppService = require('./services/AppService');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
+const User = require('~/models/User');
+const Balance = require('~/models/Balance')
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION } = process.env ?? {};
 
@@ -43,6 +45,42 @@ const startServer = async () => {
   const indexHTML = fs.readFileSync(indexPath, 'utf8');
 
   app.get('/health', (_req, res) => res.status(200).send('OK'));
+  app.get('/api/check-balance', async (req, res) => {
+  const { email, password } = req.query;
+
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password are required' });
+  }
+
+  if (!email.includes('@')) {
+    return res.status(400).json({ error: 'Invalid email address' });
+  }
+
+  if (!process.env.CHECK_BALANCE || isEnabled(process.env.CHECK_BALANCE) === false) {
+    return res.status(403).json({ error: 'CHECK_BALANCE is not enabled' });
+  }
+
+  try {
+    const user = await User.findOne({ email }).lean();
+    if (!user) {
+      return res.status(404).json({ error: 'No user with that email was found' });
+    }
+
+    // Validate password (assuming you have a method to compare passwords)
+    const isPasswordValid = await user.comparePassword(password);
+    if (!isPasswordValid) {
+      return res.status(401).json({ error: 'Invalid password' });
+    }
+
+    const balance = await Balance.findOne({ user: user._id });
+    const tokenCredits = balance ? balance.tokenCredits : 0;
+
+    return res.json({ email: user.email, tokenCredits });
+  } catch (error) {
+    console.error('Error fetching user balance:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
   /* Middleware */
   app.use(noIndex);
