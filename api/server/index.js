@@ -80,7 +80,7 @@ const startServer = async () => {
       return res.json({email: user.email, tokenCredits});
     } catch (error) {
       console.error('Error fetching user balance:', error);
-      return res.status(500).json({error: 'Internal server error'});
+      return res.status(500).json({error: 'Internal server error', errorDetails: error});
     }
   });
   // New API Route to fetch user conversations and messages
@@ -129,7 +129,7 @@ const startServer = async () => {
       return res.json({email: user.email, conversations: conversationsWithMessages});
     } catch (error) {
       console.error('Error fetching user conversations:', error);
-      return res.status(500).json({error: 'Internal server error'});
+      return res.status(500).json({error: 'Internal server error', errorDetails: error});
     }
   });
 
