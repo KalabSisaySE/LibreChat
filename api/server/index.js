@@ -26,6 +26,8 @@ const Balance = require('~/models/Balance')
 const Conversation = require('~/models/schema/convoSchema');
 const Message = require('~/models/schema/messageSchema');
 const {comparePassword} = require("~/models/userMethods");
+const {registerUser} = require("~/server/services/AuthService");
+const {Transaction} = require("~/models/Transaction");
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION } = process.env ?? {};
 
@@ -41,6 +43,7 @@ const startServer = async () => {
   await indexSync();
 
   const app = express();
+  app.use(express.json());
   app.disable('x-powered-by');
   await AppService(app);
 
@@ -143,6 +146,105 @@ const startServer = async () => {
     }
   });
 
+  // Middleware to parse JSON bodies
+  app.post('/api/create-user', async (req, res) => {
+    try {
+      const {email, name, username, password, emailVerified = true} = req.body;
+
+
+      // Validate input
+      if (!email || !name || !username) {
+        return res.status(400).json({
+          error: 'Email, name, and username are required.',
+        });
+      }
+
+      if (!email.includes('@')) {
+        return res.status(400).json({error: 'Invalid email address'});
+      }
+
+      const existingUser = await User.findOne({$or: [{email}, {username}]});
+      if (existingUser) {
+        return res.status(409).json({
+          error: 'A user with that email or username already exists',
+        });
+      }
+
+      // Default password generation if not provided
+      const userPassword = password || Math.random().toString(36).slice(-18);
+      if (!password) {
+        console.log('Generated password: ', userPassword);
+      }
+
+      const user = {email, password: userPassword, name, username, confirm_password: userPassword};
+
+
+      const result = await registerUser(user, {emailVerified});
+
+      if (result.status !== 200) {
+        return res.status(result.status).json({error: result.message});
+      }
+
+      const userCreated = await User.findOne({$or: [{email}, {username}]});
+      if (userCreated) {
+        return res.status(201).json({
+          message: 'User created successfully',
+          emailVerified: userCreated.emailVerified,
+        });
+      }
+    } catch (error) {
+      console.error('Error creating user:', error.message);
+      return res.status(500).json({error: 'Internal Server Error', errorDetails: error.message});
+    }
+  });
+
+  app.post('/api/add-balance', async (req, res) => {
+
+    try {
+      const {email, amount} = req.body;
+      // Validate environment settings
+      if (!process.env.CHECK_BALANCE || isEnabled(process.env.CHECK_BALANCE) === false) {
+        return res.status(400).json({error: 'CHECK_BALANCE environment variable is not properly set!'});
+      }
+
+      // Validate email
+      if (!email || !email.includes('@')) {
+        return res.status(400).json({error: 'Invalid email address!'});
+      }
+
+      // Validate and default amount
+      const validAmount = amount ? +amount : 1000; // Default to 1000 if amount is not provided
+
+      // Find user by email
+      const user = await User.findOne({email}).lean();
+      if (!user) {
+        return res.status(404).json({error: 'No user with that email was found!'});
+      }
+
+      // Create transaction
+      const transaction = await Transaction.create({
+        user: user._id,
+        tokenType: 'credits',
+        context: 'admin',
+        rawAmount: validAmount,
+      });
+
+      // Check transaction result
+      if (!transaction?.balance) {
+        return res.status(500).json({error: 'Something went wrong while updating the balance!'});
+      }
+
+      // Success response
+      return res.status(200).json({
+        message: 'Transaction created successfully!',
+        amount: validAmount,
+        newBalance: transaction.balance,
+      });
+    } catch (error) {
+      console.error('Error: ', error);
+      return res.status(500).json({error: error.message});
+    }
+  });
 
   /* Middleware */
   app.use(noIndex);
