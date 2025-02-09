@@ -25,6 +25,7 @@ const User = require('~/models/User');
 const Balance = require('~/models/Balance')
 const Conversation = require('~/models/schema/convoSchema');
 const Message = require('~/models/schema/messageSchema');
+const {comparePassword} = require("~/models/userMethods");
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION } = process.env ?? {};
 
@@ -63,13 +64,14 @@ const startServer = async () => {
     }
 
     try {
-      const user = await User.findOne({email}).lean();
+      const user = await User.findOne({ email });
       if (!user) {
         return res.status(404).json({error: 'No user with that email was found'});
       }
 
       // Validate password (assuming you have a method to compare passwords)
-      const isPasswordValid = await user.comparePassword(password);
+      const isPasswordValid = await comparePassword(user, password);
+
       if (!isPasswordValid) {
         return res.status(401).json({error: 'Invalid password'});
       }
@@ -79,8 +81,12 @@ const startServer = async () => {
 
       return res.json({email: user.email, tokenCredits});
     } catch (error) {
-      console.error('Error fetching user balance:', error);
-      return res.status(500).json({error: 'Internal server error', errorDetails: error});
+      // Send a generic error message to the client
+      return res.status(500).json({
+        error: 'Internal server error',
+        // Expose minimal and non-sensitive information about the error
+        errorDetails: error.message // or error.toString()
+      });
     }
   });
   // New API Route to fetch user conversations and messages
@@ -96,13 +102,13 @@ const startServer = async () => {
     }
 
     try {
-      const user = await User.findOne({email}).lean();
+      const user = await User.findOne({ email });
       if (!user) {
         return res.status(404).json({error: 'No user with that email was found'});
       }
 
       // Validate password (assuming you have a method to compare passwords)
-      const isPasswordValid = await user.comparePassword(password);
+      const isPasswordValid = await comparePassword(user, password);
       if (!isPasswordValid) {
         return res.status(401).json({error: 'Invalid password'});
       }
@@ -128,8 +134,12 @@ const startServer = async () => {
 
       return res.json({email: user.email, conversations: conversationsWithMessages});
     } catch (error) {
-      console.error('Error fetching user conversations:', error);
-      return res.status(500).json({error: 'Internal server error', errorDetails: error});
+      // Send a generic error message to the client
+      return res.status(500).json({
+        error: 'Internal server error',
+        // Expose minimal and non-sensitive information about the error
+        errorDetails: error.message // or error.toString()
+      });
     }
   });
 
