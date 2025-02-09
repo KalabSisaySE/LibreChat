@@ -51,6 +51,7 @@ const startServer = async () => {
   const indexHTML = fs.readFileSync(indexPath, 'utf8');
 
   app.get('/health', (_req, res) => res.status(200).send('OK'));
+
   app.get('/api/check-balance', async (req, res) => {
     const {email, password} = req.query;
 
@@ -92,7 +93,7 @@ const startServer = async () => {
       });
     }
   });
-  // New API Route to fetch user conversations and messages
+
   app.get('/api/user-conversations', async (req, res) => {
     const {email, password} = req.query;
 
@@ -146,7 +147,6 @@ const startServer = async () => {
     }
   });
 
-  // Middleware to parse JSON bodies
   app.post('/api/create-user', async (req, res) => {
     try {
       const {email, name, username, password, emailVerified = true} = req.body;
@@ -243,6 +243,39 @@ const startServer = async () => {
     } catch (error) {
       console.error('Error: ', error);
       return res.status(500).json({error: error.message});
+    }
+  });
+
+  app.get('/api/user-stats', async (req, res) => {
+    try {
+
+      let users = await User.find({});
+      let userData = [];
+
+      for (const user of users) {
+        let conversationsCount = await Conversation.countDocuments({ user: user._id }) || 0;
+        let messagesCount = await Message.countDocuments({ user: user._id }) || 0;
+
+        userData.push({
+          User: user.name,
+          Email: user.email,
+          Conversations: conversationsCount,
+          Messages: messagesCount,
+        });
+      }
+
+      userData.sort((a, b) => {
+        if (a.Conversations !== b.Conversations) {
+          return b.Conversations - a.Conversations;
+        }
+
+        return b.Messages - a.Messages;
+      });
+
+      res.status(200).json(userData);
+    } catch (error) {
+      console.error('An error occurred:', error);
+      res.status(500).json({error: 'Internal Server Error', errorDetails: error.message});
     }
   });
 
